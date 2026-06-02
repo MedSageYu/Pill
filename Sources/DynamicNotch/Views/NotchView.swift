@@ -113,9 +113,9 @@ struct NotchView: View {
 
     private var tabBar: some View {
         HStack(spacing: 0) {
-            // 左边：主页、隔空
+            // 左边：主页、文件
             tabButton(.home)
-            tabButton(.airdrop)
+            tabButton(.files)
             Spacer()
             // 右边：剪贴、更多
             tabButton(.clipboard)
@@ -159,7 +159,7 @@ struct NotchView: View {
                 switch vm.activeTab {
                 case .home:
                     HomePanelView(vm: vm).transition(.opacity)
-                case .airdrop:
+                case .files:
                     AirDropFilePanel().transition(.opacity)
                 case .clipboard:
                     ClipboardPanelView().transition(.opacity)
