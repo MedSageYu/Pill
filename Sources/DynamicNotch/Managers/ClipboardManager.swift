@@ -66,12 +66,11 @@ final class ClipboardManager: ObservableObject {
         guard pb.changeCount != changeCount else { return }
         changeCount = pb.changeCount
 
-        // 优先读图片（缩放到合理大小，防止截图占用过多内存）
+        // 优先读图片
         if let imgData = pb.data(forType: .tiff), let img = NSImage(data: imgData) {
             // 去重
             if let first = items.first, first.isImage { return }
-            let thumb = ClipboardManager.resizedImage(img, maxSide: 800)
-            let item = ClipboardItem(content: .image(thumb), timestamp: Date())
+            let item = ClipboardItem(content: .image(img), timestamp: Date())
             items.insert(item, at: 0)
         }
         // 再读文字
@@ -105,20 +104,4 @@ final class ClipboardManager: ObservableObject {
     }
 
     func clearAll() { items.removeAll() }
-
-    /// 缩放图片到指定最大边长，保持宽高比
-    private static func resizedImage(_ img: NSImage, maxSide: CGFloat) -> NSImage {
-        let size = img.size
-        let side = max(size.width, size.height)
-        guard side > maxSide else { return img }
-        let ratio = maxSide / side
-        let newSize = NSSize(width: size.width * ratio, height: size.height * ratio)
-        let resized = NSImage(size: newSize)
-        resized.lockFocus()
-        img.draw(in: NSRect(origin: .zero, size: newSize),
-                 from: NSRect(origin: .zero, size: size),
-                 operation: .copy, fraction: 1.0)
-        resized.unlockFocus()
-        return resized
-    }
 }
