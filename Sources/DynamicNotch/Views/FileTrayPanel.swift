@@ -43,6 +43,9 @@ final class FileTrayManager: ObservableObject {
     @Published var items: [TrayFileItem] = []
     private var autoClearTimer: Timer?
 
+    /// 文件托盘最大保留数量，超过自动删最旧的
+    private let maxItems = 50
+
     private init() {
         loadItems()
         scheduleAutoClear()
@@ -57,6 +60,7 @@ final class FileTrayManager: ObservableObject {
 
         // 只保留文件仍然存在的项
         items = saved.filter { FileManager.default.fileExists(atPath: $0.url.path) }
+        trimIfNeeded()
         saveItems()
     }
 
@@ -77,7 +81,18 @@ final class FileTrayManager: ObservableObject {
             addedAt: Date()
         )
         items.insert(item, at: 0)
+        trimIfNeeded()
         saveItems()
+    }
+
+    /// 超出上限时删除最旧的条目（含磁盘文件）
+    private func trimIfNeeded() {
+        guard items.count > maxItems else { return }
+        let toRemove = items.suffix(items.count - maxItems)
+        for item in toRemove {
+            try? FileManager.default.removeItem(at: item.url)
+        }
+        items = Array(items.prefix(maxItems))
     }
 
     /// 从托盘拖出 → 根据策略决定是否清除
@@ -127,7 +142,10 @@ final class FileTrayManager: ObservableObject {
             try? FileManager.default.removeItem(at: item.url)
         }
         items.removeAll { now.timeIntervalSince($0.addedAt) >= interval }
-        if !expired.isEmpty { saveItems() }
+        if !expired.isEmpty {
+            trimIfNeeded()
+            saveItems()
+        }
     }
 }
 
