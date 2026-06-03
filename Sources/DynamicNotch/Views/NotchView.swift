@@ -35,6 +35,11 @@ struct NotchView: View {
                 if vm.status == .opened {
                     expandedContent(in: geo)
                         .zIndex(2)
+                        .contextMenu {
+                            Button("退出 Pill") {
+                                NSApplication.shared.terminate(nil)
+                            }
+                        }
                 }
             }
         }

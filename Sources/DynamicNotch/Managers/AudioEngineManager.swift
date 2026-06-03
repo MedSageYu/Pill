@@ -3,7 +3,7 @@ import SwiftUI
 import ApplicationServices
 import Combine
 
-/// Manages the AudioEngine lifecycle. Created lazily when the More panel opens.
+/// Manages the AudioEngine lifecycle. Auto-starts when the app launches.
 /// Exposes active audio apps and per-app volume/mute controls for the UI.
 @MainActor
 final class AudioEngineManager: ObservableObject {
@@ -13,25 +13,52 @@ final class AudioEngineManager: ObservableObject {
     @Published var activeApps: [AudioApp] = []
     @Published var engineStatus: String? = nil
     private var appPollingTimer: Timer?
+    private var permissionCheckTimer: Timer?
 
     private init() {}
 
     // MARK: - Lifecycle
 
-    /// Start the audio engine. Safe to call multiple times — only creates once.
+    /// Call this once from AppDelegate on app launch.
+    /// If accessibility permission is not granted, it will prompt the user
+    /// and keep checking until permission is granted.
+    func startOnLaunch() {
+        if AXIsProcessTrusted() {
+            startEngine()
+        } else {
+            engineStatus = "需要辅助功能权限"
+            // Show system permission dialog
+            AXIsProcessTrustedWithOptions(
+                [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
+            )
+            // Keep checking every 2 seconds until permission is granted
+            permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if AXIsProcessTrusted() {
+                        self.permissionCheckTimer?.invalidate()
+                        self.permissionCheckTimer = nil
+                        self.startEngine()
+                    }
+                }
+            }
+        }
+    }
+
+    /// Call this from the More panel's onAppear (legacy, kept for compatibility)
     func start() {
+        startOnLaunch()
+    }
+
+    private func startEngine() {
         guard engine == nil else { return }
 
-        // Check accessibility permission (required for process taps)
-        let trusted = AXIsProcessTrustedWithOptions(
-            [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): false] as CFDictionary
-        )
-        if !trusted {
-            engineStatus = "需要辅助功能权限"
+        guard #available(macOS 14.2, *) else {
+            engineStatus = "需要 macOS 14.2+"
             return
         }
 
-        if #available(macOS 14.2, *) {
+        do {
             let e = AudioEngine()
             engine = e
             engineStatus = nil
@@ -49,15 +76,16 @@ final class AudioEngineManager: ObservableObject {
 
             // Get initial app list
             activeApps = e.processMonitor.activeApps
-        } else {
-            engineStatus = "需要 macOS 14.2+"
+        } catch {
+            engineStatus = "音频引擎启动失败"
         }
     }
 
-    /// Stop the audio engine and release resources.
     func stop() {
         appPollingTimer?.invalidate()
         appPollingTimer = nil
+        permissionCheckTimer?.invalidate()
+        permissionCheckTimer = nil
         engine = nil
         activeApps = []
     }
@@ -79,5 +107,4 @@ final class AudioEngineManager: ObservableObject {
     func isMuted(for app: AudioApp) -> Bool {
         engine?.isMuted(for: app) ?? false
     }
-
 }
