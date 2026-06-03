@@ -35,11 +35,6 @@ struct NotchView: View {
                 if vm.status == .opened {
                     expandedContent(in: geo)
                         .zIndex(2)
-                        .contextMenu {
-                            Button("退出 Pill") {
-                                NSApplication.shared.terminate(nil)
-                            }
-                        }
                 }
             }
         }
@@ -110,6 +105,11 @@ struct NotchView: View {
                 bottomTrailingRadius: radius, topTrailingRadius: 0
             )
         )
+        .contextMenu {
+            Button("退出 Pill") {
+                NSApplication.shared.terminate(nil)
+            }
+        }
         .position(x: geo.size.width / 2, y: (totalH - contentTopInset) / 2)
         .transition(.opacity)
     }

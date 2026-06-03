@@ -325,6 +325,27 @@ struct SettingsPanel: View {
                 // ── 检查更新 ──
                 updateSection
 
+                Divider().background(.white.opacity(0.06)).padding(.horizontal, 8)
+
+                // ── 退出 ──
+                Button {
+                    NSApplication.shared.terminate(nil)
+                } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: "power")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red.opacity(0.8))
+                        Text("退出 Pill")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.red.opacity(0.8))
+                        Spacer()
+                    }
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+
                 Spacer().frame(height: 8)
             }
             .padding(.horizontal, 12)

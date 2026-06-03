@@ -14,40 +14,52 @@ final class AudioEngineManager: ObservableObject {
     @Published var engineStatus: String? = nil
     private var appPollingTimer: Timer?
     private var permissionCheckTimer: Timer?
+    private var permissionDialogShown = false  // prevent repeated permission prompts
 
     private init() {}
 
     // MARK: - Lifecycle
 
     /// Call this once from AppDelegate on app launch.
-    /// If accessibility permission is not granted, it will prompt the user
-    /// and keep checking until permission is granted.
+    /// If accessibility permission is not granted, it will prompt the user ONCE
+    /// and keep checking silently until permission is granted.
     func startOnLaunch() {
+        // Already running or already polling — don't prompt again
+        guard engine == nil, permissionCheckTimer == nil else { return }
+
         if AXIsProcessTrusted() {
             startEngine()
-        } else {
+            return
+        }
+
+        // Show permission dialog only once
+        if !permissionDialogShown {
+            permissionDialogShown = true
             engineStatus = "需要辅助功能权限"
-            // Show system permission dialog
             AXIsProcessTrustedWithOptions(
                 [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
             )
-            // Keep checking every 2 seconds until permission is granted
-            permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 2.0, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self else { return }
-                    if AXIsProcessTrusted() {
-                        self.permissionCheckTimer?.invalidate()
-                        self.permissionCheckTimer = nil
-                        self.startEngine()
-                    }
+        }
+
+        // Poll silently every 3 seconds until permission is granted
+        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self else { return }
+                if AXIsProcessTrusted() {
+                    self.permissionCheckTimer?.invalidate()
+                    self.permissionCheckTimer = nil
+                    self.permissionDialogShown = false
+                    self.startEngine()
                 }
             }
         }
     }
 
-    /// Call this from the More panel's onAppear (legacy, kept for compatibility)
+    /// Called from MorePanelView onAppear — just ensures engine is started
     func start() {
-        startOnLaunch()
+        if engine == nil {
+            startOnLaunch()
+        }
     }
 
     private func startEngine() {
@@ -58,27 +70,23 @@ final class AudioEngineManager: ObservableObject {
             return
         }
 
-        do {
-            let e = AudioEngine()
-            engine = e
-            engineStatus = nil
+        let e = AudioEngine()
+        engine = e
+        engineStatus = nil
 
-            // Poll for active apps every 1 second
-            appPollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    guard let self, let engine = self.engine else { return }
-                    let apps = engine.processMonitor.activeApps
-                    if apps != self.activeApps {
-                        self.activeApps = apps
-                    }
+        // Poll for active apps every 1 second
+        appPollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                guard let self, let engine = self.engine else { return }
+                let apps = engine.processMonitor.activeApps
+                if apps != self.activeApps {
+                    self.activeApps = apps
                 }
             }
-
-            // Get initial app list
-            activeApps = e.processMonitor.activeApps
-        } catch {
-            engineStatus = "音频引擎启动失败"
         }
+
+        // Get initial app list
+        activeApps = e.processMonitor.activeApps
     }
 
     func stop() {

@@ -8,6 +8,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController = NotchWindowController()
         // 启动通知监听
         NotificationManager.shared.startListening()
+        AudioEngineManager.shared.startOnLaunch()
     }
 
     func applicationWillTerminate(_ notification: Notification) {
