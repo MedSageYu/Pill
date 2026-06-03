@@ -122,9 +122,8 @@ struct NotchView: View {
             tabButton(.home)
             tabButton(.files)
             Spacer()
-            // 右边：剪贴、更多
+            // 右边：剪贴
             tabButton(.clipboard)
-            tabButton(.more)
             // 设置齿轮（不占 tab 切换）
             Button {
                 withAnimation(.easeOut(duration: 0.18)) { vm.showSettings.toggle() }
@@ -179,8 +178,6 @@ struct NotchView: View {
                     AirDropFilePanel().transition(.opacity)
                 case .clipboard:
                     ClipboardPanelView().transition(.opacity)
-                case .more:
-                    MorePanelView(vm: vm).transition(.opacity)
                 }
             }
         }
@@ -380,89 +377,10 @@ private struct FileItemView: View {
 
 // MARK: - More 面板（功能网格）
 
-private struct MorePanelView: View {
-    @ObservedObject var vm: NotchViewModel
-    @ObservedObject private var audioMgr = AudioEngineManager.shared
-
-    var body: some View {
-        VStack(spacing: 0) {
-            if audioMgr.activeApps.isEmpty {
-                Spacer()
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white.opacity(0.2))
-                Text("正在检测音频应用...")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .padding(.top, 4)
-                Spacer()
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 2) {
-                        ForEach(audioMgr.activeApps) { app in
-                            AudioAppRow(app: app, audioMgr: audioMgr)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear { audioMgr.start() }
-        .onDisappear { audioMgr.stop() }
-    }
-}
-
-// MARK: - 音频应用行
-
-private struct AudioAppRow: View {
-    let app: AudioApp
-    @ObservedObject var audioMgr: AudioEngineManager
-    @State private var volume: Float = 1.0
-    @State private var isMuted = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(nsImage: app.icon)
-                .resizable()
-                .frame(width: 20, height: 20)
-                .cornerRadius(4)
-            Text(app.name)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
-                .frame(width: 70, alignment: .leading)
-            Slider(value: Binding(
-                get: { volume },
-                set: { newVal in
-                    volume = newVal
-                    audioMgr.setVolume(for: app, to: newVal)
-                    if isMuted && newVal > 0 { isMuted = false }
-                }
-            ), in: 0...1)
-            .controlSize(.small)
-            .frame(width: 80)
-            .tint(.white.opacity(0.5))
-            Button {
-                isMuted.toggle()
-                audioMgr.toggleMute(for: app)
-            } label: {
-                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(isMuted ? .red.opacity(0.8) : .white.opacity(0.5))
-                    .frame(width: 16)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 5).fill(.white.opacity(0.04)))
-        .onAppear {
-            volume = audioMgr.currentVolume(for: app)
-            isMuted = audioMgr.isMuted(for: app)
-        }
-    }
-}
+// MARK: - 保留给未来的更多页面布局（当前空置）
+// 未来在这里添加新功能时，记得在 NotchTab 中重新添加 .more case
+// 并在 tabBar 中恢复 tabButton(.more)
+// 布局骨架：VStack(spacing: 0) { ... }.frame(maxWidth: .infinity, maxHeight: .infinity)
 
 
 // MARK: - 工具按钮
