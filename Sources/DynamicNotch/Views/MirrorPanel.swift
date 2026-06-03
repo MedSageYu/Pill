@@ -178,6 +178,7 @@ struct SettingsPanel: View {
     @ObservedObject var vm: NotchViewModel
     @ObservedObject private var settings = AppSettings.shared
     @StateObject private var calendarStore = CalendarStore.shared
+    @StateObject private var updateChecker = UpdateChecker.shared
 
     var body: some View {
         ScrollView(.vertical, showsIndicators: false) {
@@ -248,10 +249,13 @@ struct SettingsPanel: View {
 
                 // ── 日历选择（固定高度，内部滚动）──
                 VStack(alignment: .leading, spacing: 0) {
-                    Text("日历显示").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                    HStack(spacing: 4) {
+                        Image(systemName: "calendar.badge.plus").font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                        Text("日历显示").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
+                    }
                         .padding(.top, 8).padding(.horizontal, 8)
                     Text("勾选要在主页展示的日历")
-                        .font(.system(size: 8)).foregroundStyle(.secondary.opacity(0.6))
+                        .font(.system(size: 8)).foregroundStyle(.white.opacity(0.4))
                         .padding(.horizontal, 8).padding(.bottom, 2)
 
                     ScrollView(.vertical, showsIndicators: false) {
@@ -270,12 +274,12 @@ struct SettingsPanel: View {
                 // ── 文件托盘设置 ──
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(spacing: 4) {
-                        Image(systemName: "tray.and.arrow.down").font(.system(size: 9)).foregroundStyle(.secondary)
-                        Text("文件托盘设置").font(.system(size: 9, weight: .semibold)).foregroundStyle(.secondary)
+                        Image(systemName: "tray.and.arrow.down").font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                        Text("文件托盘设置").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
                     }
                         .padding(.top, 8).padding(.horizontal, 8)
                     Text("文件拖入托盘后的自动清除规则")
-                        .font(.system(size: 8)).foregroundStyle(.secondary.opacity(0.6))
+                        .font(.system(size: 8)).foregroundStyle(.white.opacity(0.4))
                         .padding(.horizontal, 8).padding(.bottom, 4)
                     HStack(spacing: 6) {
                         Image(systemName: "clock.arrow.circlepath").font(.system(size: 9)).foregroundStyle(.secondary).frame(width: 14)
@@ -315,6 +319,11 @@ struct SettingsPanel: View {
                     }
                     .padding(.horizontal, 8).padding(.vertical, 4)
                 }
+
+                Divider().background(.white.opacity(0.06)).padding(.horizontal, 8)
+
+                // ── 检查更新 ──
+                updateSection
 
                 Spacer().frame(height: 8)
             }
@@ -358,5 +367,97 @@ struct SettingsPanel: View {
             Toggle("", isOn: isOn).toggleStyle(.checkbox).scaleEffect(0.65)
         }
         .padding(.horizontal, 8).padding(.vertical, 2)
+    }
+
+    // MARK: - 检查更新
+
+    @ViewBuilder
+    private var updateSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(spacing: 4) {
+                Image(systemName: "arrow.triangle.2.circlepath")
+                    .font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                Text("版本更新").font(.system(size: 10, weight: .semibold)).foregroundStyle(.white.opacity(0.7))
+            }
+                .padding(.top, 8).padding(.horizontal, 8)
+
+            switch updateChecker.status {
+            case .idle:
+                Button {
+                    updateChecker.check()
+                } label: {
+                    HStack(spacing: 5) {
+                        Image(systemName: "arrow.down.circle").font(.system(size: 10))
+                        Text("检查更新").font(.system(size: 10))
+                        Text("v\(updateChecker.currentVersion)")
+                            .font(.system(size: 8, design: .monospaced))
+                            .foregroundStyle(.white.opacity(0.4))
+                    }
+                    .foregroundStyle(.white.opacity(0.7))
+                    .padding(.horizontal, 10).padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(.white.opacity(0.1)))
+                }
+                .buttonStyle(.plain)
+                .padding(.horizontal, 8).padding(.vertical, 2)
+
+            case .checking:
+                HStack(spacing: 5) {
+                    ProgressView().scaleEffect(0.55).frame(width: 12, height: 12)
+                    Text("正在检查...").font(.system(size: 9)).foregroundStyle(.white.opacity(0.5))
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+
+            case .upToDate:
+                HStack(spacing: 5) {
+                    Image(systemName: "checkmark.circle.fill").font(.system(size: 11)).foregroundStyle(.green)
+                    Text("已是最新")
+                        .font(.system(size: 10)).foregroundStyle(.green.opacity(0.8))
+                    Text("v\(updateChecker.currentVersion)")
+                        .font(.system(size: 8, design: .monospaced)).foregroundStyle(.white.opacity(0.3))
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .contentShape(Rectangle())
+                .onTapGesture { updateChecker.status = .idle }
+
+            case let .updateAvailable(_, latest, url):
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 5) {
+                        Image(systemName: "exclamationmark.circle.fill")
+                            .font(.system(size: 11)).foregroundStyle(.orange)
+                        Text("发现新版本 v\(latest)")
+                            .font(.system(size: 10)).foregroundStyle(.orange)
+                    }
+                    if let url {
+                        Button {
+                            NSWorkspace.shared.open(url)
+                        } label: {
+                            HStack(spacing: 4) {
+                                Image(systemName: "arrow.down.circle.fill").font(.system(size: 10))
+                                Text("前往下载")
+                                    .font(.system(size: 9, weight: .medium))
+                            }
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 10).padding(.vertical, 4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 5).fill(.orange.opacity(0.3))
+                            )
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+
+            case let .error(msg):
+                HStack(spacing: 5) {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.red.opacity(0.7))
+                    Text(msg).font(.system(size: 9)).foregroundStyle(.red.opacity(0.7))
+                    Button("重试") { updateChecker.check() }
+                        .font(.system(size: 8)).foregroundStyle(.white.opacity(0.5))
+                        .padding(.horizontal, 4).padding(.vertical, 1)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.08)))
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+            }
+        }
     }
 }

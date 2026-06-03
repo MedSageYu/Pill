@@ -12,7 +12,7 @@ enum NotchTab: CaseIterable {
         case .home: "house.fill"
         case .files: "folder.fill"
         case .clipboard: "doc.on.clipboard"
-        case .more: "ellipsis"
+        case .more: "waveform"
         }
     }
 
@@ -21,7 +21,7 @@ enum NotchTab: CaseIterable {
         case .home: "主页"
         case .files: "文件"
         case .clipboard: "剪贴"
-        case .more: "更多"
+        case .more: "音频"
         }
     }
 }

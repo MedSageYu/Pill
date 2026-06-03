@@ -4,17 +4,23 @@
 <dict>
 	<key>CFBundleExecutable</key>
 	<string>Pill</string>
+	<key>CFBundleIconFile</key>
+	<string>Pill</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.pill.app</string>
 	<key>CFBundleName</key>
 	<string>Pill</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
-	<key>NSCameraUsageDescription</key>
-	<string>Pill 需要访问摄像头以显示镜子功能。</string>
 	<key>NSCalendarsUsageDescription</key>
 	<string>Pill 需要访问日历以显示日程。</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Pill 需要访问摄像头以显示镜子功能。</string>
+	<key>NSBluetoothAlwaysUsageDescription</key>
+	<string>Pill needs Bluetooth access to detect and manage audio output devices.</string>
 </dict>
 </plist>
