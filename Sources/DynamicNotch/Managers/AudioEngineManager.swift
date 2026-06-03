@@ -1,64 +1,31 @@
 import Foundation
 import SwiftUI
-import ApplicationServices
-import Combine
 
-/// Manages the AudioEngine lifecycle. Auto-starts when the app launches.
-/// Exposes active audio apps and per-app volume/mute controls for the UI.
+/// Manages the AudioEngine lifecycle.
+/// Auto-starts on app launch. Never blocks UI with permission prompts.
 @MainActor
 final class AudioEngineManager: ObservableObject {
     static let shared = AudioEngineManager()
 
     private var engine: AudioEngine?
     @Published var activeApps: [AudioApp] = []
-    @Published var engineStatus: String? = nil
+    @Published var engineStarted = false
     private var appPollingTimer: Timer?
-    private var permissionCheckTimer: Timer?
-    private var permissionDialogShown = false  // prevent repeated permission prompts
 
     private init() {}
 
     // MARK: - Lifecycle
 
-    /// Call this once from AppDelegate on app launch.
-    /// If accessibility permission is not granted, it will prompt the user ONCE
-    /// and keep checking silently until permission is granted.
+    /// Call from AppDelegate on launch. Directly starts engine, no permission checks.
     func startOnLaunch() {
-        // Already running or already polling — don't prompt again
-        guard engine == nil, permissionCheckTimer == nil else { return }
-
-        if AXIsProcessTrusted() {
-            startEngine()
-            return
-        }
-
-        // Show permission dialog only once
-        if !permissionDialogShown {
-            permissionDialogShown = true
-            engineStatus = "需要辅助功能权限"
-            AXIsProcessTrustedWithOptions(
-                [kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary
-            )
-        }
-
-        // Poll silently every 3 seconds until permission is granted
-        permissionCheckTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                if AXIsProcessTrusted() {
-                    self.permissionCheckTimer?.invalidate()
-                    self.permissionCheckTimer = nil
-                    self.permissionDialogShown = false
-                    self.startEngine()
-                }
-            }
-        }
+        guard engine == nil else { return }
+        startEngine()
     }
 
-    /// Called from MorePanelView onAppear — just ensures engine is started
+    /// Called from MorePanelView onAppear — ensures engine is started
     func start() {
         if engine == nil {
-            startOnLaunch()
+            startEngine()
         }
     }
 
@@ -66,13 +33,12 @@ final class AudioEngineManager: ObservableObject {
         guard engine == nil else { return }
 
         guard #available(macOS 14.2, *) else {
-            engineStatus = "需要 macOS 14.2+"
             return
         }
 
         let e = AudioEngine()
         engine = e
-        engineStatus = nil
+        engineStarted = true
 
         // Poll for active apps every 1 second
         appPollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -92,10 +58,9 @@ final class AudioEngineManager: ObservableObject {
     func stop() {
         appPollingTimer?.invalidate()
         appPollingTimer = nil
-        permissionCheckTimer?.invalidate()
-        permissionCheckTimer = nil
         engine = nil
         activeApps = []
+        engineStarted = false
     }
 
     // MARK: - Per-App Controls

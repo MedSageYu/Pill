@@ -386,25 +386,7 @@ private struct MorePanelView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let status = audioMgr.engineStatus {
-                // 引擎未就绪
-                Spacer()
-                Image(systemName: "exclamationmark.lock")
-                    .font(.system(size: 18))
-                    .foregroundStyle(.orange.opacity(0.6))
-                Text(status)
-                    .font(.system(size: 9))
-                    .foregroundStyle(.orange.opacity(0.7))
-                    .padding(.top, 4)
-                Button("打开系统设置") {
-                    NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
-                }
-                .buttonStyle(.plain)
-                .font(.system(size: 9))
-                .foregroundStyle(.cyan.opacity(0.8))
-                .padding(.top, 6)
-                Spacer()
-            } else if audioMgr.activeApps.isEmpty {
+            if audioMgr.activeApps.isEmpty {
                 Spacer()
                 Image(systemName: "speaker.wave.2.fill")
                     .font(.system(size: 20))
