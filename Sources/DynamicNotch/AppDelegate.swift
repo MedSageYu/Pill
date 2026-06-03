@@ -10,6 +10,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        AudioEngineManager.shared.stop()  // 清理 process taps
         windowController?.destroy()
     }
 }

@@ -1,44 +1,31 @@
 import Foundation
 import SwiftUI
 
-/// Manages the AudioEngine lifecycle.
-/// Auto-starts on app launch. Never blocks UI with permission prompts.
+/// Manages the AudioEngine lifecycle for per-app audio control.
+/// Only starts when the user opens the "音频" tab. Properly cleans up on stop.
 @MainActor
 final class AudioEngineManager: ObservableObject {
     static let shared = AudioEngineManager()
 
     private var engine: AudioEngine?
     @Published var activeApps: [AudioApp] = []
-    @Published var engineStarted = false
+    @Published var engineRunning = false
     private var appPollingTimer: Timer?
 
     private init() {}
 
     // MARK: - Lifecycle
 
-    /// Call from AppDelegate on launch. Directly starts engine, no permission checks.
-    func startOnLaunch() {
-        guard engine == nil else { return }
-        startEngine()
-    }
-
-    /// Called from MorePanelView onAppear — ensures engine is started
+    /// Start the audio engine and begin monitoring apps.
+    /// Only call when user opens the "音频" tab.
     func start() {
-        if engine == nil {
-            startEngine()
-        }
-    }
-
-    private func startEngine() {
         guard engine == nil else { return }
-
-        guard #available(macOS 14.2, *) else {
-            return
-        }
+        guard #available(macOS 14.2, *) else { return }
 
         let e = AudioEngine()
         engine = e
-        engineStarted = true
+        e.start()  // ← CRITICAL: actually starts processMonitor + deviceMonitor
+        engineRunning = true
 
         // Poll for active apps every 1 second
         appPollingTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
@@ -50,17 +37,17 @@ final class AudioEngineManager: ObservableObject {
                 }
             }
         }
-
-        // Get initial app list
-        activeApps = e.processMonitor.activeApps
     }
 
+    /// Stop the audio engine and clean up all process taps.
+    /// MUST be called before app exit to avoid residual taps.
     func stop() {
         appPollingTimer?.invalidate()
         appPollingTimer = nil
+        engine?.stop()  // ← CRITICAL: invalidates all process taps
         engine = nil
         activeApps = []
-        engineStarted = false
+        engineRunning = false
     }
 
     // MARK: - Per-App Controls
