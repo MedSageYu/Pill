@@ -382,100 +382,23 @@ private struct FileItemView: View {
 
 private struct MorePanelView: View {
     @ObservedObject var vm: NotchViewModel
-    @ObservedObject private var audioMgr = AudioEngineManager.shared
 
     var body: some View {
-        VStack(spacing: 0) {
-            if audioMgr.activeApps.isEmpty {
-                Spacer()
-                Image(systemName: "speaker.wave.2.fill")
-                    .font(.system(size: 20))
-                    .foregroundStyle(.white.opacity(0.2))
-                Text("暂无音频应用")
-                    .font(.system(size: 10))
-                    .foregroundStyle(.white.opacity(0.3))
-                    .padding(.top, 4)
-                Spacer()
-            } else {
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 2) {
-                        ForEach(audioMgr.activeApps) { app in
-                            AudioAppRow(app: app, audioMgr: audioMgr)
-                        }
-                    }
-                    .padding(.vertical, 4)
-                }
-            }
+        VStack(spacing: 12) {
+            Image(systemName: "waveform.circle")
+                .font(.system(size: 36))
+                .foregroundStyle(.white.opacity(0.25))
+            Text("音源控制")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundStyle(.white.opacity(0.5))
+            Text("即将到来")
+                .font(.system(size: 9))
+                .foregroundStyle(.white.opacity(0.3))
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .onAppear {
-            audioMgr.start()
-        }
     }
 }
 
-// MARK: - 音频应用行
-
-private struct AudioAppRow: View {
-    let app: AudioApp
-    @ObservedObject var audioMgr: AudioEngineManager
-    @State private var volume: Float = 1.0
-    @State private var isMuted = false
-
-    var body: some View {
-        HStack(spacing: 8) {
-            // App icon
-            Image(nsImage: app.icon)
-                .resizable()
-                .frame(width: 20, height: 20)
-                .cornerRadius(4)
-
-            // App name
-            Text(app.name)
-                .font(.system(size: 10, weight: .medium))
-                .foregroundStyle(.white.opacity(0.85))
-                .lineLimit(1)
-                .frame(width: 70, alignment: .leading)
-
-            // Volume slider
-            Slider(value: Binding(
-                get: { volume },
-                set: { newVal in
-                    volume = newVal
-                    audioMgr.setVolume(for: app, to: newVal)
-                    if isMuted && newVal > 0 {
-                        isMuted = false
-                    }
-                }
-            ), in: 0...1)
-            .controlSize(.small)
-            .frame(width: 80)
-            .tint(.white.opacity(0.5))
-
-            // Mute toggle
-            Button {
-                isMuted.toggle()
-                audioMgr.toggleMute(for: app)
-            } label: {
-                Image(systemName: isMuted ? "speaker.slash.fill" : "speaker.wave.2.fill")
-                    .font(.system(size: 9))
-                    .foregroundStyle(isMuted ? .red.opacity(0.8) : .white.opacity(0.5))
-                    .frame(width: 16)
-            }
-            .buttonStyle(.plain)
-        }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 3)
-        .background(
-            RoundedRectangle(cornerRadius: 5)
-                .fill(.white.opacity(0.04))
-        )
-        .onAppear {
-            volume = audioMgr.currentVolume(for: app)
-            isMuted = audioMgr.isMuted(for: app)
-        }
-    }
-}
 
 // MARK: - 工具按钮
 
