@@ -9,7 +9,6 @@ extension Comparable {
 
 /// 灵动岛视图状态管理
 /// 核心交互逻辑：全局事件监听捕获鼠标位置和点击 → 坐标判断决定开/关
-/// 参考 NotchDrop 架构，不使用 NSTrackingArea / SwiftUI onTapGesture
 final class NotchViewModel: NSObject, ObservableObject {
     static let shared = NotchViewModel()
 
@@ -40,13 +39,18 @@ final class NotchViewModel: NSObject, ObservableObject {
         DispatchQueue.global(qos: .background).async {
             Self.cleanupStaleCaches()
         }
+
+        super.init()
+
+        // 全屏检测
+        setupFullscreenDetection()
     }
 
     // MARK: - 尺寸
 
     let spacing: CGFloat = 16
     let cornerRadius: CGFloat = 22
-    let inset: CGFloat = -4  // 点击扩大范围（负值扩大命中区）
+    let inset: CGFloat = -4
 
     private var hasCustomizedHeight = false
 
@@ -60,7 +64,6 @@ final class NotchViewModel: NSObject, ObservableObject {
     var notchClosedSize: CGSize = .init(width: 165, height: 26)
     var notchOpenedSize: CGSize = .init(width: 480, height: 190)
 
-    /// 根据屏幕尺寸自适应计算 pill 大小，保证不同 Mac 上视觉一致
     func recomputeAdaptiveSizes(for screen: NSScreen? = nil) {
         let sr = screen?.frame ?? screenRect
         guard sr.width > 0, sr.height > 0 else { return }
@@ -70,25 +73,21 @@ final class NotchViewModel: NSObject, ObservableObject {
         let menuBarH = sh - (screen?.visibleFrame.height ?? sh)
         let hasNotch = menuBarH >= 30
 
-        // 收起态：宽度 ~15% 屏幕宽（180~230），高度按有无刘海自适应
         let closedW = (sw * 0.13).clamped(to: 155...220)
         let defaultClosedH: CGFloat = hasNotch ? 26 : 22
 
-        // 展开态：宽度 ~35% 屏幕宽（420~580），高度 ~21%（170~230）
         let expandedW = (sw * 0.35).clamped(to: 420...580)
         let expandedH = (sh * 0.21).clamped(to: 170...230)
 
         notchClosedSize.width = closedW
         notchOpenedSize = CGSize(width: expandedW, height: expandedH)
 
-        // 只有用户没手动改过高度时才更新默认值
         if !hasCustomizedHeight {
             collapsedHeight = defaultClosedH
             notchClosedSize.height = defaultClosedH
         }
     }
 
-    /// 窗口高度：展开态高度 + 顶部余量（容纳 pill 弧形过渡）
     static var windowHeight: CGFloat { shared.notchOpenedSize.height + 20 }
 
     var effectiveHeight: CGFloat {
@@ -115,7 +114,6 @@ final class NotchViewModel: NSObject, ObservableObject {
                 name: NSNotification.Name("NotchStatusDidChange"), object: nil)
         }
     }
-    /// 折叠态内容延迟显示（避免 cover 在 pill 动画结束前弹出）
     @Published var showCollapsedContent = true
     @Published var isHovering = false
     @Published var screenRect: CGRect = .zero
@@ -133,26 +131,118 @@ final class NotchViewModel: NSObject, ObservableObject {
         }
     }
 
-    // MARK: - 全局事件监听器（核心交互）
+    // MARK: - 全屏状态
+
+    /// 当前屏幕是否有全屏应用（如视频播放器）
+    @Published var isFullscreenActive = false
+    /// 当前鼠标所在的屏幕（用于多屏跟随）
+    var currentScreen: NSScreen?
+    private var fullscreenCheckTimer: Timer?
+    private var spaceChangeObserver: NSObjectProtocol?
+
+    private func setupFullscreenDetection() {
+        // 每 1.5 秒轮询全屏窗口（开销极低，仅 CGWindowList）
+        fullscreenCheckTimer = Timer.scheduledTimer(withTimeInterval: 1.5, repeats: true) { [weak self] _ in
+            self?.checkFullscreenState()
+        }
+        // Space 切换时立即检查
+        spaceChangeObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.activeSpaceDidChangeNotification,
+            object: nil, queue: .main
+        ) { [weak self] _ in
+            self?.checkFullscreenState()
+        }
+    }
+
+    private func checkFullscreenState() {
+        let wasFullscreen = isFullscreenActive
+        // 检查所有屏幕（单窗口 + canJoinAllSpaces 使 pill 出现在每个屏幕）
+        isFullscreenActive = NSScreen.screens.contains { screen in
+            detectFullscreenWindow(on: screen.frame)
+        }
+
+        // 刚进入全屏 → 自动收起
+        if isFullscreenActive, !wasFullscreen, status == .opened {
+            DispatchQueue.main.async { [weak self] in
+                self?.closeNotch()
+            }
+        }
+    }
+
+    /// 检测目标屏幕上是否有全屏应用窗口
+    private func detectFullscreenWindow(on screenFrame: CGRect) -> Bool {
+        let options = CGWindowListOption(arrayLiteral: .optionOnScreenOnly, .excludeDesktopElements)
+        guard let windowList = CGWindowListCopyWindowInfo(options, kCGNullWindowID)
+                as? [[String: Any]] else { return false }
+
+        for window in windowList {
+            guard let layer = window[kCGWindowLayer as String] as? Int,
+                  layer == 0,
+                  let name = window[kCGWindowOwnerName as String] as? String,
+                  name != "Pill",
+                  let bounds = window[kCGWindowBounds as String] as? [String: CGFloat]
+            else { continue }
+
+            let x = bounds["X"] ?? 0, y = bounds["Y"] ?? 0
+            let w = bounds["Width"] ?? 0, h = bounds["Height"] ?? 0
+
+            // 窗口覆盖整屏（允许 ±2px 误差）
+            if abs(x - screenFrame.origin.x) < 3,
+               abs(y - screenFrame.origin.y) < 3,
+               abs(w - screenFrame.width) < 3,
+               abs(h - screenFrame.height) < 3 {
+                return true
+            }
+        }
+        return false
+    }
+
+    // MARK: - 屏幕跟随（多屏环境）
+
+    /// 根据鼠标位置确定当前屏幕
+    func screenAtMouse() -> NSScreen? {
+        let loc = NSEvent.mouseLocation
+        return NSScreen.screens.first { $0.frame.contains(loc) }
+    }
+
+    func fallbackScreen() -> NSScreen? {
+        NSScreen.main ?? NSScreen.screens.first
+    }
+
+    /// NotchWindowController 检测到屏幕切换时调用，更新 screenRect 并重定位
+    func updateScreen(to screen: NSScreen) {
+        currentScreen = screen
+        screenRect = screen.frame
+        recomputeAdaptiveSizes(for: screen)
+    }
+
+    // MARK: - 全局事件监听器
 
     private var mouseMoveMonitor: EventMonitor?
     private var mouseDownMonitor: EventMonitor?
     private var rightMouseDownMonitor: EventMonitor?
-    /// 记录上一帧鼠标是否在展开区域内（用于检测离开事件）
     private var wasInsideOpened = false
 
+    /// 外部回调：屏幕变化时 NotchWindowController 调用
+    var onScreenChange: ((NSScreen) -> Void)?
+
     func setupEvents() {
-        // 全局鼠标移动 → 控制 hover 状态
+        // 全局鼠标移动
         mouseMoveMonitor = EventMonitor(mask: .mouseMoved) { [weak self] _ in
             guard let self else { return }
             let loc = NSEvent.mouseLocation
+
+            // 屏幕跟随：检测鼠标是否移动到其他屏幕
+            if let newScreen = self.screenAtMouse(), newScreen != self.currentScreen {
+                self.onScreenChange?(newScreen)
+            }
+
             let nearCollapsed = self.hitRect.contains(loc)
             let insideOpened = self.status == .opened && self.hitRectOpened.contains(loc)
 
             DispatchQueue.main.async {
                 self.isHovering = nearCollapsed
 
-                // 仅当鼠标从「展开区内」→「展开区外」时启动自动收起（防止每次移动重置 timer）
                 if !insideOpened, self.wasInsideOpened {
                     self.startAutoClose()
                 } else if insideOpened {
@@ -163,7 +253,7 @@ final class NotchViewModel: NSObject, ObservableObject {
         }
         mouseMoveMonitor?.start()
 
-        // 全局鼠标按下 → 开/关
+        // 全局鼠标按下
         mouseDownMonitor = EventMonitor(mask: .leftMouseDown) { [weak self] _ in
             guard let self else { return }
             let loc = NSEvent.mouseLocation
@@ -182,7 +272,7 @@ final class NotchViewModel: NSObject, ObservableObject {
         }
         mouseDownMonitor?.start()
 
-        // 右键 → 退出菜单（折叠态 pill 上右键弹出 Quit）
+        // 右键退出菜单
         rightMouseDownMonitor = EventMonitor(mask: .rightMouseDown) { [weak self] _ in
             guard let self else { return }
             let loc = NSEvent.mouseLocation
@@ -197,12 +287,29 @@ final class NotchViewModel: NSObject, ObservableObject {
         mouseMoveMonitor?.stop()
         mouseDownMonitor?.stop()
         rightMouseDownMonitor?.stop()
+        fullscreenCheckTimer?.invalidate()
+        fullscreenCheckTimer = nil
+        if let obs = spaceChangeObserver {
+            NSWorkspace.shared.notificationCenter.removeObserver(obs)
+            spaceChangeObserver = nil
+        }
     }
 
     // MARK: - 命中区域
 
-    /// 折叠态命中区（用于 hover + click 检测）
+    /// 折叠态命中区
+    /// 全屏时：仅屏幕顶部 6px 触发条（防止误触视频控制栏）
     var hitRect: CGRect {
+        if isFullscreenActive, status == .closed {
+            // 全屏隐藏态：仅顶部 6px 窄条触发
+            let sr = screenRect
+            return CGRect(
+                x: sr.origin.x + (sr.width - 300) / 2,
+                y: sr.maxY - 6,
+                width: 300,
+                height: 6
+            )
+        }
         let w = effectiveWidth, h = notchClosedSize.height
         let x = screenRect.origin.x + (screenRect.width - w) / 2
         let y = screenRect.origin.y + screenRect.height - h
@@ -210,7 +317,6 @@ final class NotchViewModel: NSObject, ObservableObject {
             .insetBy(dx: inset, dy: inset)
     }
 
-    /// 展开态命中区
     var hitRectOpened: CGRect {
         let w = notchOpenedSize.width, h = notchOpenedSize.height
         let x = screenRect.origin.x + (screenRect.width - w) / 2
@@ -219,7 +325,6 @@ final class NotchViewModel: NSObject, ObservableObject {
             .insetBy(dx: inset, dy: inset)
     }
 
-    /// 用户通过设置面板调节高度时调用（标记为已自定义）
     func setCustomCollapsedHeight(_ h: CGFloat) {
         hasCustomizedHeight = true
         collapsedHeight = h
@@ -236,7 +341,7 @@ final class NotchViewModel: NSObject, ObservableObject {
             removal: .opacity)
     }
 
-    // MARK: - 坐标计算（用于窗口内容定位）
+    // MARK: - 坐标计算
 
     var notchRect: CGRect {
         CGRect(
@@ -267,7 +372,6 @@ final class NotchViewModel: NSObject, ObservableObject {
         showCollapsedContent = false
         withAnimation(animation) { status = .closed }
         cancelAutoClose()
-        // 延迟显示折叠态内容，等 pill 动画收缩到接近完成（避免封面过早弹出）
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
             self?.showCollapsedContent = true
         }
@@ -335,13 +439,12 @@ final class NotchViewModel: NSObject, ObservableObject {
         closeNotch()
     }
 
-    // MARK: - 隔空投送（拖拽文件）
+    // MARK: - 隔空投送
 
     @Published var isDragTargetActive: Bool = false
     @Published var pendingAirDropFile: AirDropFile?
     private var airDropService: NSSharingService?
 
-    /// 拖拽进入触发区（距 notch 200pt 内，约 pill 面积 4~5 倍）→ 展开
     func handleDragEntered(at screenLoc: NSPoint) {
         let trigger = hitRect.insetBy(dx: -200, dy: -200)
         guard trigger.contains(screenLoc) else { return }
@@ -349,20 +452,16 @@ final class NotchViewModel: NSObject, ObservableObject {
         isDragTargetActive = true
     }
 
-    /// 拖拽离开视图区域
     func handleDragExited() {
         isDragTargetActive = false
     }
 
-    /// 文件释放到 notch → 拷贝 → 展示文件卡片 → 弹出 AirDrop
     func handleDrop(urls: [URL]) {
         guard let url = urls.first else { return }
         isDragTargetActive = false
 
-        // 先清理旧文件（第二个文件拖入时覆盖第一个）
         cleanupAirDropFile()
 
-        // 拷贝到缓存目录（文件在原位置保留）
         let cacheDir = URL(fileURLWithPath: NSHomeDirectory())
             .appendingPathComponent("Library/Caches/Pill/AirDrop")
         try? FileManager.default.createDirectory(at: cacheDir, withIntermediateDirectories: true)
@@ -400,7 +499,6 @@ final class NotchViewModel: NSObject, ObservableObject {
         service.perform(withItems: urls)
     }
 
-    /// 清理 AirDrop 缓存文件和所有状态
     private func cleanupAirDropFile() {
         if let prev = pendingAirDropFile {
             try? FileManager.default.removeItem(at: prev.localURL)
@@ -409,19 +507,16 @@ final class NotchViewModel: NSObject, ObservableObject {
         airDropService = nil
     }
 
-    /// 用户手动关闭 AirDrop 卡片（右上角 ❌ 按钮）
     func dismissAirDropFile() {
         cleanupAirDropFile()
     }
 
     // MARK: - 缓存清理
 
-    /// 启动时清理过期缓存，防止无限增长
     static func cleanupStaleCaches() {
         let fm = FileManager.default
         let home = NSHomeDirectory()
 
-        // 1. 清理 AirDrop 残留（app 崩溃留下的）
         let airdropDir = URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Caches/Pill/AirDrop")
         if let files = try? fm.contentsOfDirectory(at: airdropDir,
@@ -429,7 +524,6 @@ final class NotchViewModel: NSObject, ObservableObject {
             for f in files { try? fm.removeItem(at: f) }
         }
 
-        // 2. 清理 TrayDrop — 保留最新的 20 个文件
         let trayDir = URL(fileURLWithPath: home)
             .appendingPathComponent("Library/Caches/Pill/TrayDrop")
         if let files = try? fm.contentsOfDirectory(at: trayDir,
@@ -444,7 +538,6 @@ final class NotchViewModel: NSObject, ObservableObject {
             }
         }
 
-        // 3. 截断诊断日志（保留最后 512KB）
         let logPath = "/tmp/notch_wc.log"
         if fm.fileExists(atPath: logPath),
            let attrs = try? fm.attributesOfItem(atPath: logPath),
@@ -474,8 +567,6 @@ struct AirDropFile {
     let localURL: URL
 }
 
-// MARK: - NSSharingServiceDelegate
-
 extension NotchViewModel: NSSharingServiceDelegate {
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         cleanupAirDropFile()
@@ -485,8 +576,6 @@ extension NotchViewModel: NSSharingServiceDelegate {
         cleanupAirDropFile()
     }
 }
-
-// MARK: - 通知数据模型
 
 struct IncomingNotification: Identifiable, Equatable {
     let id = UUID()

@@ -22,39 +22,24 @@ final class NotchWindowController: NSObject {
         for (i, s) in allScreens.enumerated() {
             logDiag("  screen \(i): frame=\(NSStringFromRect(s.frame)) visible=\(NSStringFromRect(s.visibleFrame))")
         }
-        guard let screen = NSScreen.main ?? allScreens.first else {
+
+        // 用鼠标所在的屏幕，不用 NSScreen.main
+        let vm = NotchViewModel.shared
+        let targetScreen = vm.screenAtMouse() ?? vm.fallbackScreen()
+        guard let screen = targetScreen else {
             logDiag("ERROR: no screen!")
             return
         }
         self.screen = screen
-        logDiag("using screen: \(NSStringFromRect(screen.frame))")
+        vm.updateScreen(to: screen)
+        logDiag("using screen (by mouse): \(NSStringFromRect(screen.frame))")
 
-        let wh = NotchViewModel.windowHeight
-        let wFrame = CGRect(
-            x: screen.frame.origin.x,
-            y: screen.frame.origin.y + screen.frame.height - wh,
-            width: screen.frame.width,
-            height: wh
-        )
+        positionWindow(on: screen)
 
-        let window = NotchWindow(
-            contentRect: wFrame,
-            styleMask: [.borderless, .fullSizeContentView],
-            backing: .buffered,
-            defer: false,
-            screen: screen
-        )
-        self.window = window
-
-        let vm = NotchViewModel.shared
         self.vm = vm
-        vm.screenRect = screen.frame
-        vm.recomputeAdaptiveSizes(for: screen)
 
-        // DragOverlayView 作为窗口 contentView（处理文件拖拽 → AirDrop）
-        // SwiftUI 内容作为其子视图，hitTest 自然穿透到最深处
         let dragView = DragOverlayView(vm: vm)
-        window.contentView = dragView
+        window?.contentView = dragView
 
         let hostingView = NSHostingView(rootView: NotchView(vm: vm))
         hostingView.translatesAutoresizingMaskIntoConstraints = false
@@ -66,29 +51,33 @@ final class NotchWindowController: NSObject {
             hostingView.bottomAnchor.constraint(equalTo: dragView.bottomAnchor),
         ])
 
-        window.setFrameOrigin(wFrame.origin)
-        window.setContentSize(wFrame.size)
-        window.makeKeyAndOrderFront(nil)
-        logDiag("window frame=\(NSStringFromRect(window.frame)), isVisible=\(window.isVisible), isKey=\(window.isKeyWindow)")
+        window?.makeKeyAndOrderFront(nil)
+        logDiag("window frame=\(NSStringFromRect(window?.frame ?? .zero)), isVisible=\(window?.isVisible ?? false)")
 
-        // 启动全局事件监听（核心：鼠标 hover/click 检测）
+        // 屏幕跟随：鼠标移动到其他屏幕时重定位
+        vm.onScreenChange = { [weak self] newScreen in
+            self?.moveToScreen(newScreen)
+        }
+
         vm.setupEvents()
 
-        // 屏幕变化通知
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(screenDidChange),
             name: NSApplication.didChangeScreenParametersNotification,
             object: nil
         )
+
+        // 全屏状态变化 → 调整窗口
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(fullscreenStateChanged),
+            name: Notification.Name("NotchStatusDidChange"),
+            object: nil
+        )
     }
 
-    @objc private func screenDidChange() {
-        guard let screen = NSScreen.main ?? NSScreen.screens.first else { return }
-        self.screen = screen
-        vm?.screenRect = screen.frame
-        vm?.recomputeAdaptiveSizes(for: screen)
-
+    private func positionWindow(on screen: NSScreen) {
         let wh = NotchViewModel.windowHeight
         let wFrame = CGRect(
             x: screen.frame.origin.x,
@@ -96,8 +85,42 @@ final class NotchWindowController: NSObject {
             width: screen.frame.width,
             height: wh
         )
-        window?.setFrameOrigin(wFrame.origin)
-        window?.setContentSize(wFrame.size)
+
+        if let existing = window {
+            existing.setFrame(wFrame, display: true, animate: true)
+        } else {
+            let w = NotchWindow(
+                contentRect: wFrame,
+                styleMask: [.borderless, .fullSizeContentView],
+                backing: .buffered,
+                defer: false,
+                screen: screen
+            )
+            self.window = w
+        }
+    }
+
+    private func moveToScreen(_ newScreen: NSScreen) {
+        guard newScreen != screen else { return }
+        screen = newScreen
+        vm?.updateScreen(to: newScreen)
+        positionWindow(on: newScreen)
+        logDiag("moved to screen: \(NSStringFromRect(newScreen.frame))")
+    }
+
+    @objc private func screenDidChange() {
+        guard let vm else { return }
+        // 仍然用鼠标位置
+        let targetScreen = vm.screenAtMouse() ?? NSScreen.main ?? NSScreen.screens.first
+        guard let targetScreen, targetScreen != screen else { return }
+        moveToScreen(targetScreen)
+    }
+
+    @objc private func fullscreenStateChanged() {
+        // 全屏时降低窗口层级，避免遮挡菜单栏
+        if let w = window {
+            w.ignoresMouseEvents = (vm?.isFullscreenActive == true && vm?.status == .closed)
+        }
     }
 
     func destroy() {
@@ -108,7 +131,7 @@ final class NotchWindowController: NSObject {
     }
 }
 
-// MARK: - 拖拽处理视图（窗口 contentView，内嵌 SwiftUI）
+// MARK: - 拖拽处理视图
 
 fileprivate class DragOverlayView: NSView {
     weak var vm: NotchViewModel?
@@ -122,9 +145,6 @@ fileprivate class DragOverlayView: NSView {
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
-
-    // 不覆盖 hitTest — SwiftUI 子视图（NSHostingView）充满整个区域，
-    // hitTest 自动返回最深子视图。鼠标事件 → SwiftUI 内容；拖拽事件 → 本视图
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         vm?.handleDragEntered(at: NSEvent.mouseLocation)
@@ -149,7 +169,7 @@ fileprivate class DragOverlayView: NSView {
     }
 }
 
-// MARK: - 文件诊断日志（print() 在 GUI app 中不输出）
+// MARK: - 诊断日志
 
 private func logDiag(_ msg: String) {
     let line = "\(Date().timeIntervalSince1970) [NotchWC] \(msg)\n"

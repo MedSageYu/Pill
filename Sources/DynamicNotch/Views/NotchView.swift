@@ -15,15 +15,15 @@ struct NotchView: View {
                 // ── 统一胶囊背景 ──
                 unifiedPill(in: geo)
 
-                // ── 折叠态：音乐播放展示（延迟出现，等动画完成）──
-                if vm.showCollapsedContent && vm.isMusicPlaying {
+                // ── 折叠态：音乐播放展示（全屏隐藏）──
+                if vm.showCollapsedContent && vm.isMusicPlaying && !vm.isFullscreenActive {
                     CollapsedMusicView()
                         .frame(width: vm.effectiveWidth)
                         .zIndex(3)
                 }
 
-                // ── 折叠态：通知展示（延迟出现，等动画完成）──
-                if vm.showCollapsedContent, let noti = vm.activeNotification {
+                // ── 折叠态：通知展示（全屏隐藏）──
+                if vm.showCollapsedContent, let noti = vm.activeNotification, !vm.isFullscreenActive {
                     CollapsedNotificationView(notification: noti)
                         .padding(.horizontal, 8)
                         .frame(width: vm.effectiveWidth, height: vm.effectiveHeight)
@@ -79,6 +79,9 @@ struct NotchView: View {
         .frame(width: w, height: h)
         .position(x: geo.size.width / 2, y: h / 2)
         .animation(vm.animation, value: vm.status)
+        // 全屏隐藏态：胶囊不可见
+        .opacity(vm.isFullscreenActive && vm.status == .closed ? 0 : 1)
+        .animation(.easeInOut(duration: 0.25), value: vm.isFullscreenActive)
         .zIndex(1)
     }
 
