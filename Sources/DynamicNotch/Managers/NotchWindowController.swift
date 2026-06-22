@@ -38,6 +38,9 @@ final class NotchWindowController: NSObject {
 
         self.vm = vm
 
+        // 初始状态：收起，穿透点击
+        window?.ignoresMouseEvents = true
+
         let dragView = DragOverlayView(vm: vm)
         window?.contentView = dragView
 
@@ -120,10 +123,10 @@ final class NotchWindowController: NSObject {
     }
 
     @objc private func fullscreenStateChanged() {
-        // 全屏时降低窗口层级，避免遮挡菜单栏
-        if let w = window {
-            w.ignoresMouseEvents = (vm?.isFullscreenActive == true && vm?.status == .closed)
-        }
+        guard let w = window, let vm else { return }
+        // 收起时穿透所有点击（让下面的 App 正常工作）
+        // 展开时正常响应点击
+        w.ignoresMouseEvents = (vm.status == .closed)
     }
 
     func destroy() {
