@@ -77,7 +77,7 @@ final class NotchWindowController: NSObject {
         )
     }
 
-    private func positionWindow(on screen: NSScreen) {
+    private func positionWindow(on screen: NSScreen, animate: Bool = false) {
         let wh = NotchViewModel.windowHeight
         let wFrame = CGRect(
             x: screen.frame.origin.x,
@@ -87,7 +87,7 @@ final class NotchWindowController: NSObject {
         )
 
         if let existing = window {
-            existing.setFrame(wFrame, display: true, animate: true)
+            existing.setFrame(wFrame, display: true, animate: animate)
         } else {
             let w = NotchWindow(
                 contentRect: wFrame,
@@ -104,7 +104,10 @@ final class NotchWindowController: NSObject {
         guard newScreen != screen else { return }
         screen = newScreen
         vm?.updateScreen(to: newScreen)
-        positionWindow(on: newScreen)
+        // 先隐藏 → 瞬间定位 → 显示：无滑动残影
+        window?.alphaValue = 0
+        positionWindow(on: newScreen, animate: false)
+        window?.alphaValue = 1
         logDiag("moved to screen: \(NSStringFromRect(newScreen.frame))")
     }
 
