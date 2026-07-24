@@ -10,6 +10,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         windowController = NotchWindowController()
         NotificationManager.shared.startListening()
         startUpdateCheckCycle()
+        // 启动解锁拍照监控（如果设置开启）
+        if AppSettings.shared.unlockCameraSnapshot {
+            UnlockCameraManager.shared.startMonitoring()
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {

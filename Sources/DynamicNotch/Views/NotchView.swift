@@ -196,7 +196,19 @@ private struct HomePanelView: View {
         HStack(spacing: 0) {
             MusicControlView().frame(maxWidth: .infinity, maxHeight: .infinity)
             VLine().opacity(0.08).padding(.vertical, 4)
-            MirrorInlinePreview(vm: vm).frame(maxWidth: .infinity)
+            // 镜子区域：根据 mirrorSubPage 切换一级/二级
+            ZStack {
+                if vm.mirrorSubPage == .snapshots {
+                    UnlockSnapshotsPanel(vm: vm)
+                        .transition(.opacity)
+                } else {
+                    MirrorInlinePreview(vm: vm)
+                        .transition(.opacity)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .animation(.easeInOut(duration: 0.2), value: vm.mirrorSubPage)
+
             VLine().opacity(0.08).padding(.vertical, 4)
             CompactCalendarView(vm: vm).frame(width: 142)
         }

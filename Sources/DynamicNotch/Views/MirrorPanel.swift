@@ -111,8 +111,11 @@ fileprivate struct CameraView: NSViewRepresentable {
 
 struct MirrorInlinePreview: View {
     @ObservedObject var vm: NotchViewModel
+    @ObservedObject private var settings = AppSettings.shared
     @State private var isActive = false
     @State private var permissionDenied = false
+    @State private var longPressStarted = false
+    @State private var longPressTask: Task<Void, Never>?
 
     var body: some View {
         Group {
@@ -150,7 +153,23 @@ struct MirrorInlinePreview: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .onDisappear {
             isActive = false
+            longPressTask?.cancel()
         }
+        // 长按手势：设置开启时进入解锁拍照二级页面
+        .gesture(
+            LongPressGesture(minimumDuration: 0.5)
+                .onChanged { _ in
+                    longPressStarted = true
+                }
+                .onEnded { _ in
+                    longPressStarted = false
+                    if settings.unlockCameraSnapshot {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            vm.mirrorSubPage = .snapshots
+                        }
+                    }
+                }
+        )
     }
 
     private func requestAndStart() {
@@ -244,6 +263,23 @@ struct SettingsPanel: View {
                     detail: vm.mirrorEnabled ? "开" : "关",
                     control: {
                         Toggle("", isOn: $vm.mirrorEnabled).toggleStyle(.switch).scaleEffect(0.7)
+                    }
+                )
+
+                // ── 解锁拍照 ──
+                settingRow(
+                    icon: "lock.camera",
+                    title: "解锁拍照",
+                    detail: settings.unlockCameraSnapshot ? "开" : "关",
+                    control: {
+                        Toggle("", isOn: $settings.unlockCameraSnapshot).toggleStyle(.switch).scaleEffect(0.7)
+                            .onChange(of: settings.unlockCameraSnapshot) { _, enabled in
+                                if enabled {
+                                    UnlockCameraManager.shared.startMonitoring()
+                                } else {
+                                    UnlockCameraManager.shared.stopMonitoring()
+                                }
+                            }
                     }
                 )
 
@@ -478,6 +514,102 @@ struct SettingsPanel: View {
                         .background(RoundedRectangle(cornerRadius: 3).fill(.white.opacity(0.08)))
                 }
                 .padding(.horizontal, 8).padding(.vertical, 4)
+            }
+        }
+    }
+}
+// MARK: - 解锁拍照二级页面
+
+struct UnlockSnapshotsPanel: View {
+    @ObservedObject var vm: NotchViewModel
+    @ObservedObject private var manager = UnlockCameraManager.shared
+
+    private let timeFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "HH:mm"
+        return f
+    }()
+
+    private let dateFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM/dd"
+        return f
+    }()
+
+    var body: some View {
+        VStack(spacing: 4) {
+            // 返回按钮
+            HStack {
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        vm.mirrorSubPage = .main
+                    }
+                } label: {
+                    HStack(spacing: 3) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text("返回")
+                            .font(.system(size: 9))
+                    }
+                    .foregroundColor(.white.opacity(0.6))
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.08)))
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .frame(height: 18)
+
+            if manager.snapshots.isEmpty {
+                // 空状态
+                VStack(spacing: 6) {
+                    Image(systemName: "lock.camera")
+                        .font(.system(size: 20))
+                        .foregroundStyle(.white.opacity(0.25))
+                    Text("暂无解锁拍照")
+                        .font(.system(size: 10))
+                        .foregroundStyle(.white.opacity(0.35))
+                    Text("锁屏后再解锁即可记录")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.2))
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // 2×2 圆形照片网格
+                let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 2)
+                LazyVGrid(columns: cols, spacing: 6) {
+                    ForEach(manager.snapshots) { snap in
+                        snapshotCell(snap)
+                    }
+                }
+                .padding(.horizontal, 2)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    @ViewBuilder
+    private func snapshotCell(_ snap: UnlockSnapshot) -> some View {
+        VStack(spacing: 3) {
+            Image(nsImage: snap.image)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 56, height: 56)
+                .clipShape(Circle())
+                .overlay(
+                    Circle()
+                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                )
+
+            // 24 小时制时间
+            VStack(spacing: 0) {
+                Text(timeFormatter.string(from: snap.timestamp))
+                    .font(.system(size: 8, weight: .medium, design: .monospaced))
+                    .foregroundStyle(.white.opacity(0.7))
+                Text(dateFormatter.string(from: snap.timestamp))
+                    .font(.system(size: 7))
+                    .foregroundStyle(.white.opacity(0.35))
             }
         }
     }

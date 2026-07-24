@@ -7,6 +7,12 @@ extension Comparable {
     }
 }
 
+/// 镜子二级页面状态
+enum MirrorSubPage {
+    case main       // 一级：镜子实时预览
+    case snapshots  // 二级：解锁拍照记录
+}
+
 /// 灵动岛视图状态管理
 /// 核心交互逻辑：全局事件监听捕获鼠标位置和点击 → 坐标判断决定开/关
 final class NotchViewModel: NSObject, ObservableObject {
@@ -119,6 +125,7 @@ final class NotchViewModel: NSObject, ObservableObject {
     @Published var screenRect: CGRect = .zero
     @Published var activeTab: NotchTab = .home
     @Published var showSettings: Bool = false
+    @Published var mirrorSubPage: MirrorSubPage = .main
     @Published var mirrorEnabled: Bool = true {
         didSet { UserDefaults.standard.set(mirrorEnabled, forKey: "mirrorEnabled") }
     }
@@ -364,6 +371,8 @@ final class NotchViewModel: NSObject, ObservableObject {
 
     func openNotch() {
         showCollapsedContent = false
+        // 每次展开自动回到镜子一级页面
+        mirrorSubPage = .main
         withAnimation(animation) { status = .opened }
         cancelAutoClose()
     }

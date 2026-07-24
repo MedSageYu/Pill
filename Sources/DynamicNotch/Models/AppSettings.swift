@@ -47,6 +47,10 @@ final class AppSettings: ObservableObject {
         }
     }
 
+    @Published var unlockCameraSnapshot: Bool {
+        didSet { UserDefaults.standard.set(unlockCameraSnapshot, forKey: "unlockCameraSnapshot") }
+    }
+
     private init() {
         let defaults = UserDefaults.standard
         self.autoHideDelay = defaults.object(forKey: "autoHideDelay") as? TimeInterval ?? 4.0
@@ -56,10 +60,12 @@ final class AppSettings: ObservableObject {
         } else {
             self.fileTrayClearPolicy = .onDragOut
         }
+        self.unlockCameraSnapshot = defaults.bool(forKey: "unlockCameraSnapshot")
     }
 
     func resetToDefaults() {
         autoHideDelay = 4.0
         fileTrayClearPolicy = .onDragOut
+        unlockCameraSnapshot = false
     }
 }
