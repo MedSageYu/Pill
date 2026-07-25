@@ -282,6 +282,12 @@ struct SettingsPanel: View {
                             }
                     }
                 )
+                // 安防记录说明
+                Text("长按镜子可查看解锁电脑后的自动抓拍")
+                    .font(.system(size: 8))
+                    .foregroundStyle(.white.opacity(0.25))
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 4)
 
                 // ── 日历选择（固定高度，内部滚动）──
                 VStack(alignment: .leading, spacing: 0) {
