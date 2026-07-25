@@ -51,8 +51,8 @@ final class UnlockCameraManager: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             Task { @MainActor in
-                // 唤醒后延迟 2 秒，等摄像头就绪
-                try? await Task.sleep(nanoseconds: 2_000_000_000)
+                // 唤醒后延迟 1 秒，等摄像头硬件就绪
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
                 self?.captureSnapshot()
             }
         }
@@ -129,10 +129,12 @@ final class UnlockCameraManager: ObservableObject {
 
                 session.startRunning()
 
-                // 等 session 稳定
-                try? await Task.sleep(nanoseconds: 500_000_000)
+                // 等 session 稳定 + 自动曝光/白平衡收敛
+                // 1 秒让 AE/AWB 有足够时间调整，避免黑帧或欠曝
+                try? await Task.sleep(nanoseconds: 1_000_000_000)
 
                 let settings = AVCapturePhotoSettings()
+                // 关闭高分辨率，加快拍照速度
                 settings.isHighResolutionPhotoEnabled = false
 
                 let delegate = PhotoCaptureDelegate { [weak self] image in
@@ -169,7 +171,7 @@ final class UnlockCameraManager: ObservableObject {
         if snapshots.count > maxSnapshots {
             snapshots = Array(snapshots.prefix(maxSnapshots))
         }
-        print("[UnlockCamera] 拍照成功，共 \(snapshots.count) 张")
+        print("[SecurityCamera] 安防记录已保存，共 \(snapshots.count) 条")
     }
 
     private func mirrorImage(_ image: NSImage) -> NSImage {

@@ -266,10 +266,10 @@ struct SettingsPanel: View {
                     }
                 )
 
-                // ── 解锁拍照 ──
+                // ── 安防记录 ──
                 settingRow(
-                    icon: "lock.camera",
-                    title: "解锁拍照",
+                    icon: "lock.shield",
+                    title: "安防记录",
                     detail: settings.unlockCameraSnapshot ? "开" : "关",
                     control: {
                         Toggle("", isOn: $settings.unlockCameraSnapshot).toggleStyle(.switch).scaleEffect(0.7)
@@ -518,7 +518,7 @@ struct SettingsPanel: View {
         }
     }
 }
-// MARK: - 解锁拍照二级页面
+// MARK: - 安防记录二级页面
 
 struct UnlockSnapshotsPanel: View {
     @ObservedObject var vm: NotchViewModel
@@ -537,69 +537,90 @@ struct UnlockSnapshotsPanel: View {
     }()
 
     var body: some View {
-        VStack(spacing: 4) {
-            // 返回按钮
-            HStack {
-                Button {
-                    withAnimation(.easeInOut(duration: 0.2)) {
-                        vm.mirrorSubPage = .main
-                    }
-                } label: {
-                    HStack(spacing: 3) {
-                        Image(systemName: "chevron.left")
-                            .font(.system(size: 9, weight: .semibold))
-                        Text("返回")
-                            .font(.system(size: 9))
-                    }
-                    .foregroundColor(.white.opacity(0.6))
-                    .padding(.horizontal, 6)
-                    .padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.08)))
-                }
-                .buttonStyle(.plain)
-                Spacer()
-            }
-            .frame(height: 18)
+        GeometryReader { geo in
+            let w = geo.size.width
+            let h = geo.size.height
+            // 返回按钮高度占 15%，网格区域占 85%
+            let headerH = min(h * 0.15, 20)
+            let gridH = h - headerH - 4
+            // 圆形照片直径：取宽度和高度约束的较小值
+            // 网格 2 列 2 行，减去间距和 padding
+            let cellW = (w - 12) / 2  // 每个格子宽度（含间距）
+            let cellH = (gridH - 4) / 2  // 每个格子高度（含间距）
+            // 照片直径不超过格子宽高，且留出时间文字空间
+            let circleSize = min(cellW - 8, cellH - 20)
+            let photoSize = max(28, min(circleSize, 72))
 
-            if manager.snapshots.isEmpty {
-                // 空状态
-                VStack(spacing: 6) {
-                    Image(systemName: "lock.camera")
-                        .font(.system(size: 20))
-                        .foregroundStyle(.white.opacity(0.25))
-                    Text("暂无解锁拍照")
-                        .font(.system(size: 10))
-                        .foregroundStyle(.white.opacity(0.35))
-                    Text("锁屏后再解锁即可记录")
-                        .font(.system(size: 8))
-                        .foregroundStyle(.white.opacity(0.2))
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                // 2×2 圆形照片网格
-                let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 2)
-                LazyVGrid(columns: cols, spacing: 6) {
-                    ForEach(manager.snapshots) { snap in
-                        snapshotCell(snap)
+            VStack(spacing: 4) {
+                // 返回按钮 + 标题
+                HStack(spacing: 4) {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) {
+                            vm.mirrorSubPage = .main
+                        }
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "chevron.left")
+                                .font(.system(size: 9, weight: .semibold))
+                            Text("返回")
+                                .font(.system(size: 9))
+                        }
+                        .foregroundColor(.white.opacity(0.6))
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 4).fill(.white.opacity(0.08)))
                     }
+                    .buttonStyle(.plain)
+
+                    Spacer()
+
+                    Image(systemName: "lock.shield.fill")
+                        .font(.system(size: 8))
+                        .foregroundStyle(.white.opacity(0.3))
                 }
-                .padding(.horizontal, 2)
+                .frame(height: headerH)
+
+                if manager.snapshots.isEmpty {
+                    // 空状态
+                    VStack(spacing: 5) {
+                        Image(systemName: "lock.shield")
+                            .font(.system(size: min(w * 0.3, 24)))
+                            .foregroundStyle(.white.opacity(0.25))
+                        Text("暂无安防记录")
+                            .font(.system(size: 10))
+                            .foregroundStyle(.white.opacity(0.35))
+                        Text("锁屏后解锁将自动记录")
+                            .font(.system(size: 8))
+                            .foregroundStyle(.white.opacity(0.2))
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                } else {
+                    // 2×2 圆形照片网格
+                    let cols = Array(repeating: GridItem(.flexible(), spacing: 6), count: 2)
+                    LazyVGrid(columns: cols, spacing: 6) {
+                        ForEach(manager.snapshots) { snap in
+                            snapshotCell(snap, photoSize: photoSize)
+                        }
+                    }
+                    .padding(.horizontal, 2)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
     @ViewBuilder
-    private func snapshotCell(_ snap: UnlockSnapshot) -> some View {
-        VStack(spacing: 3) {
+    private func snapshotCell(_ snap: UnlockSnapshot, photoSize: CGFloat) -> some View {
+        VStack(spacing: 2) {
             Image(nsImage: snap.image)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: 56, height: 56)
+                .frame(width: photoSize, height: photoSize)
                 .clipShape(Circle())
                 .overlay(
                     Circle()
-                        .stroke(Color.white.opacity(0.1), lineWidth: 0.5)
+                        .stroke(Color.white.opacity(0.12), lineWidth: 0.5)
                 )
 
             // 24 小时制时间
@@ -611,6 +632,7 @@ struct UnlockSnapshotsPanel: View {
                     .font(.system(size: 7))
                     .foregroundStyle(.white.opacity(0.35))
             }
+            .frame(height: 18)
         }
     }
 }
