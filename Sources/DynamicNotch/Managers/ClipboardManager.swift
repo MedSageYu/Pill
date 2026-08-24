@@ -48,6 +48,7 @@ final class ClipboardManager: ObservableObject {
 
     private init() {
         changeCount = NSPasteboard.general.changeCount
+        print("[ClipboardManager] 预热完成，开始轮询")
         startPolling()
     }
 

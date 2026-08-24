@@ -9,6 +9,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         windowController = NotchWindowController()
         NotificationManager.shared.startListening()
+        // 预热剪贴板管理器：惰性单例需主动触发初始化，否则首次点开剪贴板 tab 前不记录复制内容
+        _ = ClipboardManager.shared
         startUpdateCheckCycle()
         // 启动解锁拍照监控（如果设置开启）
         if AppSettings.shared.unlockCameraSnapshot {
